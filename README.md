@@ -172,3 +172,17 @@
         http.HandleFunc("/hello", hello)
         http.ListenAndServe(":8090", nil)
     ```
+
+### HTTP Clients
+
+* The Go standard library comes with excellent support for HTTP clients and servers in the `net/http` package.
+
+* `http.Get` is a convenient shortcut around creating an `http.Client` object and calling its Get method. `it uses the `http.DefaultClient` object which has useful default settings.
+
+    ```go
+        resp, err := http.Get("http://gobyexample.com")
+        if err != nil {
+            panic(err)
+        }
+        defer resp.Body.Close()
+    ```
