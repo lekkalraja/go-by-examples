@@ -363,3 +363,181 @@
         3
     ```
 * Note that the `defer !` from our program `never got printed`.
+
+### JSON
+
+* Go offers built-in support for JSON encoding and decoding, including to and from built-in and custom data types.
+
+* We’ll use these two structs to demonstrate encoding and decoding of custom types below.
+* Only exported fields will be encoded/decoded in JSON. Fields must start with capital letters to be exported.
+
+    ```go
+        type response1 struct {
+            Page   int
+            Fruits []string
+        }
+
+        type response2 struct {
+            Page   int      `json:"page"`
+            Fruits []string `json:"fruits"`
+        }
+    ```
+
+* First we’ll look at encoding basic data types to JSON strings. Here are some examples for atomic values.
+
+    ```go
+        bolB, _ := json.Marshal(true)
+        fmt.Println(string(bolB))
+        intB, _ := json.Marshal(1)
+        fmt.Println(string(intB))
+        fltB, _ := json.Marshal(2.34)
+        fmt.Println(string(fltB))
+        strB, _ := json.Marshal("gopher")
+        fmt.Println(string(strB))
+    ```
+* here are some for slices and maps, which encode to JSON arrays and objects as you’d expect.
+
+    ```go
+        slcD := []string{"apple", "peach", "pear"}
+        slcB, _ := json.Marshal(slcD)
+        fmt.Println(string(slcB))
+        mapD := map[string]int{"apple": 5, "lettuce": 7}
+        mapB, _ := json.Marshal(mapD)
+        fmt.Println(string(mapB))
+    ```
+
+* The JSON package can automatically encode your custom data types. 
+* It will only include exported fields in the encoded output and will `by default use those names as the JSON keys`.
+
+    ```go
+        res1D := &response1{
+            Page:   1,
+            Fruits: []string{"apple", "peach", "pear"}
+        }
+        res1B, _ := json.Marshal(res1D)
+        fmt.Println(string(res1B))
+    ```
+
+* You can use tags on struct field declarations to customize the encoded JSON key names. Check the definition of response2 above to see an example of such tags.
+
+    ```go
+        res2D := &response2{
+            Page:   1,
+            Fruits: []string{"apple", "peach", "pear"}
+        }
+        res2B, _ := json.Marshal(res2D)
+        fmt.Println(string(res2B))
+    ```
+
+* Now let’s look at decoding JSON data into Go values. Here’s an example for a generic data structure.
+
+    ```go
+        byt := []byte(`{"num":6.13,"strs":["a","b"]}`)
+    ```
+
+* We need to provide a variable where the JSON package can put the decoded data. 
+* This map[string]interface{} will hold a map of strings to arbitrary data types.
+
+    ```go
+        var dat map[string]interface{}
+
+        if err := json.Unmarshal(byt, &dat); err != nil {
+            panic(err)
+        }
+
+        fmt.Println(dat)
+    ```
+* In order to use the values in the decoded map, we’ll need to convert them to their appropriate type.
+* For example here we convert the value in num to the expected float64 type.
+
+    ```go
+        num := dat["num"].(float64)
+        fmt.Println(num)
+    ```
+* Accessing nested data requires a series of conversions.
+
+    ```go
+        strs := dat["strs"].([]interface{})
+        str1 := strs[0].(string)
+        fmt.Println(str1)
+    ```
+* We can also decode JSON into custom data types. This has the advantages of adding additional type-safety to our programs and eliminating the need for type assertions when accessing the decoded data.
+
+    ```go
+        str := `{"page": 1, "fruits": ["apple", "peach"]}`
+        res := response2{}
+        json.Unmarshal([]byte(str), &res)
+        fmt.Println(res)
+        fmt.Println(res.Fruits[0])
+    ```
+
+* In the examples above we always used bytes and strings as intermediates between the data and JSON representation on standard out.
+* We can also stream JSON encodings directly to os.Writers like os.Stdout or even HTTP response bodies.
+
+    ```go
+        enc := json.NewEncoder(os.Stdout)
+        d := map[string]int{"apple": 5, "lettuce": 7}
+        enc.Encode(d)
+    ```
+
+### XML
+* Go offers built-in support for XML and XML-like formats with the encoding.xml package.
+
+* Plant will be mapped to XML. Similarly to the JSON examples, field tags contain directives for the encoder and decoder.
+* Here we use some special features of the XML package: the `XMLName` field name dictates the name of the XML element representing this struct; `id,attr` means that the Id field is an XML attribute rather than a nested element.
+
+    ```go
+        type Plant struct {
+            XMLName xml.Name `xml:"plant"`
+            Id      int      `xml:"id,attr"`
+            Name    string   `xml:"name"`
+            Origin  []string `xml:"origin"`
+        }
+
+        func (p Plant) String() string {
+            return fmt.Sprintf("Plant id=%v, name=%v, origin=%v",p.Id, p.Name, p.Origin)
+        }
+    ```
+
+* Emit XML representing our plant; using MarshalIndent to produce a more human-readable output.
+
+    ```go
+        coffee := &Plant{Id: 27, Name: "Coffee"}
+        coffee.Origin = []string{"Ethiopia", "Brazil"}
+
+
+        out, _ := xml.MarshalIndent(coffee, " ", "  ")
+        fmt.Println(string(out))
+    ```
+
+* To add a generic XML header to the output, append it explicitly.
+
+    ```go
+        fmt.Println(xml.Header + string(out))
+    ```
+
+* Use Unmarhshal to parse a stream of bytes with XML into a data structure. If the XML is malformed or cannot be mapped onto Plant, a descriptive error will be returned.
+
+    ```go
+        var p Plant
+        if err := xml.Unmarshal(out, &p); err != nil {
+            panic(err)
+        }
+        fmt.Println(p)
+    ```
+* The parent>child>plant field tag tells the encoder to nest all plants under <parent><child>...
+
+    ```go
+        tomato := &Plant{Id: 81, Name: "Tomato"}
+        tomato.Origin = []string{"Mexico", "California"}
+
+        type Nesting struct {
+            XMLName xml.Name `xml:"nesting"`
+            Plants  []*Plant `xml:"parent>child>plant"`
+        }
+
+        nesting := &Nesting{}
+        nesting.Plants = []*Plant{coffee, tomato}
+        out, _ = xml.MarshalIndent(nesting, " ", "  ")
+        fmt.Println(string(out))
+    ```
