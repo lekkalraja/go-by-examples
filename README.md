@@ -874,3 +874,326 @@
         res = plusPlus(1, 2, 3)
         fmt.Println("1+2+3 =", res)
     ```
+
+### Time
+
+* Go offers extensive support for times and durations; here are some examples.
+* We’ll start by getting the current time.
+
+    ```go
+        p := fmt.Println
+
+
+        now := time.Now()
+        p(now) // 2021-06-10 08:05:44.457982841 +0800 +08 m=+0.000074231
+    ```
+* You can build a time struct by providing the year, month, day, etc. `Times are always associated with a Location`, i.e. time zone.
+
+    ```go
+        p := fmt.Println
+        then := time.Date(2009, 11, 17, 20, 34, 58, 651387237, time.UTC)
+
+        p(then) // 2009-11-17 20:34:58.651387237 +0000 UTC
+    ```
+
+* You can extract the various components of the time value as expected.
+
+    ```go
+        p(then.Year()) // 2019
+        p(then.Month()) // November
+        p(then.Day()) // 17
+        p(then.Hour()) // 20
+        p(then.Minute()) // 34
+        p(then.Second()) // 58
+        p(then.Nanosecond()) // 651387237
+        p(then.Location()) // UTC
+    ```
+
+* The Monday-Sunday Weekday is also available.
+
+    ```go
+        p(then.Weekday()) // Tuesday
+    ```
+
+* These methods compare two times, testing if the first occurs before, after, or at the same time as the second, respectively.
+
+    ```go
+        p(then.Before(now)) // true
+        p(then.After(now)) // false
+        p(then.Equal(now)) // false
+    ```
+
+* The Sub methods returns a Duration representing the interval between two times.
+
+    ```go
+        diff := now.Sub(then) // 101331h30m45.806595604s
+        p(diff)
+    ```
+
+* We can compute the length of the duration in various units.
+
+    ```go
+        p(diff.Hours()) // 101331.51272405434
+        p(diff.Minutes()) // 6.07989076344326e+06
+        p(diff.Seconds()) // 3.647934458065956e+08
+        p(diff.Nanoseconds()) // 364793445806595604
+    ```
+
+* You can use Add to advance a time by a given duration, or with a - to move backwards by a duration.
+
+    ```go
+        p(then.Add(diff)) // 2021-06-10 00:05:44.457982841 +0000 UTC
+        p(then.Add(-diff)) // 1998-04-27 17:04:12.844791633 +0000 UTC
+    ```
+
+### Epoch
+* A common requirement in programs is getting the number of seconds, milliseconds, or nanoseconds since the Unix epoch. Here’s how to do it in Go.
+
+* Use time.Now with Unix or UnixNano to get elapsed time since the Unix epoch in seconds or nanoseconds, respectively.
+* Note that there is no UnixMillis, so to get the milliseconds since epoch you’ll need to manually divide from nanoseconds.
+
+    ```go
+        now := time.Now()
+        secs := now.Unix()
+        nanos := now.UnixNano()
+
+        millis := nanos / 1000000
+        fmt.Println(now) // 2021-06-10 08:13:27.194057698 +0800 +08 m=+0.000082269
+        fmt.Println(secs) // 1623284007
+        fmt.Println(millis) // 1623284007194
+        fmt.Println(nanos) // 1623284007194057698
+    ```
+
+* You can also convert integer seconds or nanoseconds since the epoch into the corresponding time.
+
+    ```go
+        fmt.Println(time.Unix(secs, 0)) //2021-06-10 08:13:27 +0800 +08
+        fmt.Println(time.Unix(0, nanos)) // 2021-06-10 08:13:27.194057698 +0800 +08
+    ```
+### Regular Expressions
+
+* Go offers built-in support for regular expressions. Here are some examples of common regexp-related tasks in Go.
+
+* This tests whether a pattern matches a string.
+* we used a string pattern directly,
+    ```go
+        match, _ := regexp.MatchString("p([a-z]+)ch", "peach")
+        fmt.Println(match) // true
+    ```
+
+* but for other regexp tasks you’ll need to Compile an optimized Regexp struct.
+
+    ```go
+        r, _ := regexp.Compile("p([a-z]+)ch")
+    ```
+
+* Many methods are available on these structs. Here’s a match test like we saw earlier.
+
+    ```go
+        fmt.Println(r.MatchString("peach")) // true
+    ```
+
+* This finds the match for the regexp.
+
+    ```go
+        fmt.Println(r.FindString("peach punch")) // peach
+    ```
+
+* This also finds the first match but returns the start and end indexes for the match instead of the matching text.
+
+    ```go
+        fmt.Println(r.FindStringIndex("peach punch")) // [0 5]
+    ```
+
+* The Submatch variants include information about both the whole-pattern matches and the submatches within those matches. For example this will return information for both p([a-z]+)ch and ([a-z]+).
+
+    ```go
+        fmt.Println(r.FindStringSubmatch("peach punch")) // [peach ea]
+    ```
+* Similarly this will return information about the indexes of matches and submatches.
+
+    ```go
+        fmt.Println(r.FindStringSubmatchIndex("peach punch")) // [0 5 1 3]
+    ```
+
+* The All variants of these functions apply to all matches in the input, not just the first. For example to find all matches for a regexp.
+
+    ```go
+        fmt.Println(r.FindAllString("peach punch pinch", -1)) // [peach punch pinch]
+    ```
+
+* These All variants are available for the other functions we saw above as well.
+
+    ```go
+        fmt.Println(r.FindAllStringSubmatchIndex("peach punch pinch", -1)) [[0 5 1 3] [6 11 7 9] [12 17 13 15]]
+    ```
+
+* Providing a non-negative integer as the second argument to these functions will limit the number of matches.
+
+    ```go
+        fmt.Println(r.FindAllString("peach punch pinch", 2)) // [peach punch]
+    ```
+
+* Our examples above had string arguments and used names like MatchString. We can also provide []byte arguments and drop String from the function name.
+
+    ```go
+        fmt.Println(r.Match([]byte("peach"))) // true
+    ```
+
+* When creating global variables with regular expressions you can use the MustCompile variation of Compile. MustCompile panics instead of returning an error, which makes it safer to use for global variables.
+
+    ```go
+        r = regexp.MustCompile("p([a-z]+)ch")
+        fmt.Println(r) // p([a-z]+)ch
+    ```
+
+* The regexp package can also be used to replace subsets of strings with other values.
+
+    ```go
+        fmt.Println(r.ReplaceAllString("a peach", "<fruit>")) // a <fruit>
+    ```
+
+* The Func variant allows you to transform matched text with a given function.
+
+    ```go
+        in := []byte("a peach")
+        out := r.ReplaceAllFunc(in, bytes.ToUpper)
+        fmt.Println(string(out)) // a PEACH
+    ```
+
+### String Functions
+* The standard library’s strings package provides many useful string-related functions. Here are some examples to give you a sense of the package.
+
+* We alias fmt.Println to a shorter name as we’ll use it a lot below.
+* Here’s a sample of the functions available in strings. Since these are functions from the package, not methods on the string object itself, we need pass the string in question as the first argument to the function.
+* You can find more functions in the [strings](http://golang.org/pkg/strings/) package docs.
+
+    ```go
+        var p = fmt.Println
+        p("Contains:  ", s.Contains("test", "es")) //Contains:   true
+        p("Count:     ", s.Count("test", "t")) //Count:      2
+        p("HasPrefix: ", s.HasPrefix("test", "te")) //HasPrefix:  true
+        p("HasSuffix: ", s.HasSuffix("test", "st")) //HasSuffix:  true
+        p("Index:     ", s.Index("test", "e")) //Index:      1
+        p("Join:      ", s.Join([]string{"a", "b"}, "-")) //Join:       a-b
+        p("Repeat:    ", s.Repeat("a", 5)) //Repeat:     aaaaa
+        p("Replace:   ", s.Replace("foo", "o", "0", -1)) //Replace:    f00
+        p("Replace:   ", s.Replace("foo", "o", "0", 1)) //Replace:    f0o
+        p("Split:     ", s.Split("a-b-c-d-e", "-")) //Split:      [a b c d e]
+        p("ToLower:   ", s.ToLower("TEST")) //ToLower:    test
+        p("ToUpper:   ", s.ToUpper("test")) //ToUpper:    TEST
+        p()
+    ```
+
+* Not part of strings, but worth mentioning here, are the mechanisms for getting the length of a string in bytes and getting a byte by index.
+
+    ```go
+        p("Len: ", len("hello")) //Len:  5
+        p("Char:", "hello"[1]) // Char: 101
+    ```
+
+* Note that len and indexing above work at the byte level. Go uses UTF-8 encoded strings, so this is often useful as-is. If you’re working with potentially multi-byte characters you’ll want to use encoding-aware operations. See strings, bytes, runes and characters in Go for more information.
+
+### String Formatting
+
+* Go offers excellent support for string formatting in the printf tradition. Here are some examples of common string formatting tasks.
+
+    ```go
+        type point struct {
+           x, y int
+        }
+    ```
+
+* Go offers several printing “verbs” designed to format general Go values. 
+* For example, this prints an instance of our point struct.
+    ```go
+        p := point{1, 2}
+        fmt.Printf("%v\n", p) // {1 2}
+    ```
+* If the value is a struct, the `%+v` variant will include the struct’s field names.
+    ```go
+        fmt.Printf("%+v\n", p) //{x:1 y:2}
+    ```
+* The `%#v` variant prints a Go syntax representation of the value, i.e. the source code snippet that would produce that value.
+    ```go
+        fmt.Printf("%#v\n", p) //main.point{x:1, y:2}
+    ```
+* To print the type of a value, use `%T`.
+    ```go
+        fmt.Printf("%T\n", p) //main.point
+    ```
+* Formatting booleans is straight-forward.
+    ```go
+        fmt.Printf("%t\n", true) //true
+    ```
+* There are many options for formatting integers. Use `%d` for standard, `base-10` formatting.
+    ```go
+        fmt.Printf("%d\n", 123) //123
+    ```
+* This prints a binary representation.
+    ```go
+        fmt.Printf("%b\n", 14) //1110
+    ```
+* This prints the character corresponding to the given integer.
+    ```go
+        fmt.Printf("%c\n", 33) //!
+    ```
+* `%x` provides hex encoding.
+    ```go
+        fmt.Printf("%x\n", 456) //1c8
+    ```
+* There are also several formatting options for floats. For basic decimal formatting use `%f`.
+    ```go
+        fmt.Printf("%f\n", 78.9) //78.900000
+    ```
+* `%e` and `%E` format the float in (slightly different versions of) scientific notation.
+
+    ```go
+        fmt.Printf("%e\n", 123400000.0) //1.234000e+08
+        fmt.Printf("%E\n", 123400000.0) //1.234000E+08
+    ```
+* For basic string printing use `%s`.
+    ```go
+        fmt.Printf("%s\n", "\"string\"") //"string"
+    ```
+* To `double-quote strings` as in Go source, use `%q`.
+    ```go
+        fmt.Printf("%q\n", "\"string\"") //"\"string\""
+    ```
+* As with integers seen earlier, `%x` renders the string in `base-16`, with two output characters per byte of input.
+    ```go
+        fmt.Printf("%x\n", "hex this") //6865782074686973
+    ```
+* To print a representation of a pointer, use `%p`.
+    ```go
+        fmt.Printf("%p\n", &p) //0xc00009e000
+    ```
+* When formatting numbers you will often want to control the width and precision of the resulting figure. To specify the width of an integer, use a number after the % in the verb. `By default the result will be right-justified and padded with spaces`.
+    ```go
+        fmt.Printf("|%6d|%6d|\n", 12, 345) //|    12|   345|
+    ```
+* You can also specify the width of printed floats, though usually you’ll also want to restrict the decimal precision at the same time with the width.precision syntax.
+    ```go
+        fmt.Printf("|%6.2f|%6.2f|\n", 1.2, 3.45) //|  1.20|  3.45|
+    ```
+* To `left-justify`, use the `-` flag.
+    ```go
+        fmt.Printf("|%-6.2f|%-6.2f|\n", 1.2, 3.45) //|1.20  |3.45  |
+    ```
+* You may also want to control width when formatting strings, especially to ensure that they align in table-like output. For basic right-justified width.
+    ```go
+        fmt.Printf("|%6s|%6s|\n", "foo", "b") //|   foo|     b|
+    ```
+* To `left-justify` use the `-` flag as with numbers.
+    ```go
+        fmt.Printf("|%-6s|%-6s|\n", "foo", "b") //|foo   |b     |
+    ```
+* So far we’ve seen `Printf`, which prints the formatted string to `os.Stdout`. `Sprintf formats` and `returns a string without printing it anywhere`.
+    ```go
+        s := fmt.Sprintf("a %s", "string")
+        fmt.Println(s) //a string
+    ```
+* You can format+print to io.Writers other than os.Stdout using Fprintf.
+    ```go
+        fmt.Fprintf(os.Stderr, "an %s\n", "error") //an error
+    ```
