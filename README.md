@@ -1197,3 +1197,208 @@
     ```go
         fmt.Fprintf(os.Stderr, "an %s\n", "error") //an error
     ```
+
+### Multiple Return Values
+
+* Go has built-in support for `multiple return values`.
+* This feature is used often in idiomatic Go, for example to return both result and error values from a function.
+
+* The `(int, int)` in this function signature shows that the function returns 2 ints.
+
+    ```go
+        func vals() (int, int) {
+           return 3, 7
+        }
+    ```
+
+* Here we use the 2 different return values from the call with multiple assignment.
+
+    ```go
+        a, b := vals()
+        fmt.Println(a) // 3
+        fmt.Println(b) // 7
+    ```
+* If you only want a subset of the returned values, use the blank identifier _.
+
+    ```go
+        _, c := vals()
+        fmt.Println(c) // 7
+    ```
+### Variadic Functions
+
+* Variadic functions can be called with `any number of trailing arguments`.
+* For example, `fmt.Println is a common variadic function`.
+
+* Here’s a function that will take an arbitrary number of ints as arguments.
+
+    ```go
+        func sum(nums ...int) {
+            fmt.Print(nums, " ")
+            total := 0
+            for _, num := range nums {
+                total += num
+            }
+            fmt.Println(total)
+        }
+    ```
+
+* Variadic functions can be called in the usual way with individual arguments.
+
+    ```go
+        sum(1, 2) // [1 2] 3
+        sum(1, 2, 3) // [1 2 3] 6
+    ```
+
+* If you already have `multiple args in a slice`, apply them to a `variadic function using func(slice...)` like this.
+
+    ```go
+        nums := []int{1, 2, 3, 4}
+        sum(nums...) // [1 2 3 4] 10
+    ```
+
+### Pointers
+
+* Go supports pointers, allowing you to pass references to values and records within your program.
+
+* We’ll show how pointers work in contrast to values with 2 functions: zeroval and zeroptr. *
+* zeroval has an int parameter, so `arguments will be passed to it by value`. 
+* zeroval will get `a copy of ival distinct from the one in the calling function`.
+
+    ```go
+        func zeroval(ival int) {
+            ival = 0
+        }
+    ```
+
+* zeroptr in contrast has an `*int parameter, meaning that it takes an int pointer`. 
+* The `*iptr` code in the function body then dereferences the pointer from its memory address to the current value at that address.
+* Assigning a value to a dereferenced pointer changes the value at the referenced address.
+
+    ```go
+        func zeroptr(iptr *int) {
+            *iptr = 0
+        }
+    ```
+    ```go
+        i := 1
+        fmt.Println("initial:", i) // inintial : 1
+        zeroval(i)
+        fmt.Println("zeroval:", i) // zeroval: 1
+    ```
+* The `&i syntax gives the memory address of i`, i.e. `a pointer to i`.
+
+    ```go
+        zeroptr(&i)
+        fmt.Println("zeroptr:", i) // zeroptr: 0
+    ```
+
+* Pointers can be printed too.
+
+    ```go
+        fmt.Println("pointer:", &i) // pointer: 0xc0000ba010
+    ```
+* zeroval doesn’t change the i in main, but zeroptr does because it has a reference to the memory address for that variable.
+
+### Structs
+
+* Go’s `structs are typed collections of fields`.
+* They’re useful for `grouping data together to form records`.
+
+* This person struct type has name and age fields.
+
+    ```go
+        type person struct {
+            name string
+            age  int
+        }
+    ```
+* newPerson constructs a new person struct with the given name.
+
+    ```go
+        func newPerson(name string) *person {
+            p := person{name: name}
+            p.age = 42
+            return &p
+        }
+    ```
+
+* You can safely return a pointer to local variable as a local variable will survive the scope of the function.
+
+* This syntax creates a new struct.
+
+    ```go
+        fmt.Println(person{"Bob", 20}) //{Bob 20}
+    ```
+* You can name the fields when initializing a struct.
+
+    ```go
+        fmt.Println(person{name: "Alice", age: 30}) // {Alice 30}
+    ```
+* Omitted fields will be zero-valued.
+
+    ```go
+        fmt.Println(person{name: "Fred"}) // {Fred 0}
+    ```
+* An & prefix yields a pointer to the struct.
+
+    ```go
+        fmt.Println(&person{name: "Ann", age: 40}) // &{Ann 40}
+    ```
+* It’s idiomatic to encapsulate new struct creation in constructor functions
+    ```go
+        fmt.Println(newPerson("Jon")) // &{Jon 42}
+    ```
+* Access struct fields with a dot.
+    ```go
+        s := person{name: "Sean", age: 50}
+        fmt.Println(s.name) // Sean
+    ```
+* `You can also use dots with struct pointers - the pointers are automatically dereferenced`.
+    ```go
+        sp := &s
+        fmt.Println(sp.age) //50
+    ```
+* Structs are mutable.
+    ```go
+        sp.age = 51
+        fmt.Println(sp.age) // 51
+    ```
+### Methods
+
+* Go supports methods defined on struct types.
+
+    ```go
+        type rect struct {
+            width, height int
+        }
+    ```
+* This area method has a receiver type of `*rect`.
+
+    ```go
+        func (r *rect) area() int {
+            return r.width * r.height
+        }
+    ```
+* `Methods can be defined for either pointer or value receiver types`.
+*  Here’s an example of a value receiver.
+
+    ```go
+        func (r rect) perim() int {
+            return 2*r.width + 2*r.height
+        }
+    ```
+* Here we call the 2 methods defined for our struct.
+    ```go
+        r := rect{width: 10, height: 5}
+        fmt.Println("area: ", r.area()) // area:  50
+        fmt.Println("perim:", r.perim()) // perim: 30
+    ```
+
+* Go `automatically handles conversion between values and pointers for method calls`.
+*  You may want to `use a pointer receiver type to avoid copying on method calls` or `to allow the method to mutate the receiving struct.`
+
+    ```go
+        rp := &r
+        fmt.Println("area: ", rp.area()) // area:  50
+        fmt.Println("perim:", rp.perim()) // perim: 30
+    ```
