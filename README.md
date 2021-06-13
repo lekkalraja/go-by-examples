@@ -1624,3 +1624,259 @@
         pong(pings, pongs)
         fmt.Println(<-pongs)
     ```
+
+### Select
+
+* Go’s `select` lets you wait on multiple channel operations.
+* Combining goroutines and channels with select is a powerful feature of Go.
+
+* For our example we’ll select across two channels.
+
+    ```go
+        c1 := make(chan string)
+        c2 := make(chan string)
+    ```
+* Each channel will receive a value after some amount of time, to simulate e.g. blocking RPC operations executing in concurrent goroutines.
+
+    ```go
+        go func() {
+            time.Sleep(1 * time.Second)
+            c1 <- "one"
+        }()
+        go func() {
+            time.Sleep(2 * time.Second)
+            c2 <- "two"
+        }()
+    ```
+* We’ll use select to await both of these values simultaneously, printing each one as it arrives.
+
+    ```go
+        for i := 0; i < 2; i++ {
+            select {
+            case msg1 := <-c1:
+                fmt.Println("received", msg1) // received one
+            case msg2 := <-c2:
+                fmt.Println("received", msg2) // received two
+            }
+        }
+    ```
+* We receive the values "one" and then "two" as expected.
+
+* Note that the total execution time is only `~2 seconds` since both the 1 and 2 second Sleeps execute concurrently.
+
+### Timeouts
+
+* Timeouts are important for programs that connect to external resources or that otherwise need to bound execution time. 
+* `Implementing timeouts in Go is easy and elegant thanks to channels and select`.
+
+* For our example, suppose we’re executing an external call that returns its result on a channel `c1` after `2s`.
+* Note that `the channel is buffered, so the send in the goroutine is nonblocking. This is a common pattern to prevent goroutine leaks in case the channel is never read`.
+    ```go
+        c1 := make(chan string, 1)
+        go func() {
+            time.Sleep(2 * time.Second)
+            c1 <- "result 1"
+        }()
+    ```
+* Here’s the select implementing a timeout.
+* `res := <-c1` awaits the result and
+* `<-time.After` awaits a value to be sent after the timeout of 1s.
+* Since select proceeds with the first receive that’s ready, we’ll take the timeout case if the operation takes more than the allowed 1s.
+    ```go
+        select {
+        case res := <-c1:
+            fmt.Println(res)
+        case <-time.After(1 * time.Second):
+            fmt.Println("timeout 1")
+        }
+        // prints : timeout 1
+    ```
+* If we allow a longer timeout of 3s, then the receive from c2 will succeed and we’ll print the result.
+    ```go
+        c2 := make(chan string, 1)
+        go func() {
+            time.Sleep(2 * time.Second)
+            c2 <- "result 2"
+        }()
+        select {
+        case res := <-c2:
+            fmt.Println(res)
+        case <-time.After(3 * time.Second):
+            fmt.Println("timeout 2")
+        }
+        // prints : result 2
+    ```
+* Running this program shows the `first operation timing out` and the `second succeeding`.
+
+### Non-Blocking Channel Operations
+
+* `Basic sends and receives on channels are blocking`. 
+* However, we `can use select with a default clause to implement non-blocking sends, receives, and even non-blocking multi-way selects`.
+    ```go
+        messages := make(chan string)
+        signals := make(chan bool)
+    ```
+* Here’s a non-blocking receive. If a value is available on messages then select will take the <-messages case with that value. If not it will immediately take the default case.
+    ```go
+        select {
+        case msg := <-messages:
+            fmt.Println("received message", msg)
+        default:
+            fmt.Println("no message received")
+        }
+        // prints : no message received
+    ```
+* A non-blocking send works similarly. Here msg cannot be sent to the messages channel, because the channel has no buffer and there is no receiver. Therefore the default case is selected.
+    ```go
+        msg := "hi"
+        select {
+        case messages <- msg:
+            fmt.Println("sent message", msg)
+        default:
+            fmt.Println("no message sent")
+        }
+        // prints : no message sent
+    ```
+* We can use multiple cases above the default clause to implement a multi-way non-blocking select. Here we attempt non-blocking receives on both messages and signals.
+    ```go
+        select {
+        case msg := <-messages:
+            fmt.Println("received message", msg)
+        case sig := <-signals:
+            fmt.Println("received signal", sig)
+        default:
+            fmt.Println("no activity")
+        }
+        // prints : no activity
+    ```
+
+### Closing Channels
+* Closing a channel indicates that no more values will be sent on it.
+* This can be useful to communicate completion to the channel’s receivers.
+
+* In this example we’ll use a jobs channel to communicate work to be done from the main() goroutine to a worker goroutine.
+* When we have no more jobs for the worker we’ll close the jobs channel.
+    ```go
+        jobs := make(chan int, 5)
+        done := make(chan bool)
+    ```
+* Here’s the worker goroutine. It repeatedly receives from jobs with `j, more := <-jobs`.
+* In this special 2-value form of receive, `the more value will be false if jobs has been closed` and all values in the channel have already been received. We use this to notify on done when we’ve worked all our jobs.
+    ```go
+        go func() {
+            for {
+                j, more := <-jobs
+                if more {
+                    fmt.Println("received job", j)
+                } else {
+                    fmt.Println("received all jobs")
+                    done <- true
+                    return
+                }
+            }
+        }()
+    ```
+* This sends 3 jobs to the worker over the jobs channel, then closes it.
+    ```go
+        for j := 1; j <= 3; j++ {
+            jobs <- j
+            fmt.Println("sent job", j)
+        }
+        close(jobs)
+        fmt.Println("sent all jobs")
+    ```
+* We await the worker using the synchronization approach we saw earlier.
+    ```go
+        <-done
+    ```
+### Range over Channels
+* Earlier we saw how `for` and `range` provide iteration over basic data structures.
+* We can also use this syntax to iterate over values received from a channel.
+
+* We’ll iterate over 2 values in the queue channel.
+    ```go
+        queue := make(chan string, 2)
+        queue <- "one"
+        queue <- "two"
+        close(queue)
+    ```
+* This range iterates over each element as it’s received from queue. Because we closed the channel above, the iteration terminates after receiving the 2 elements.
+    ```go
+        for elem := range queue {
+        fmt.Println(elem)
+    }
+    // prints : one two
+    ```
+}
+* This example also showed that it’s possible to close a non-empty channel but still have the remaining values be received.
+
+### Timers
+* We often want to execute Go code at some point in the future, or repeatedly at some interval.
+* Go’s built-in `timer and ticker` features make both of these tasks easy.
+
+* Timers represent a single event in the future. You tell the timer how long you want to wait, and it `provides a channel that will be notified at that time`.
+* This timer will wait 2 seconds.
+    ```go
+        timer1 := time.NewTimer(2 * time.Second)
+    ```
+* The `<-timer1.C` blocks on the timer’s channel C until it sends a value indicating that the timer fired.
+    ```go
+        <-timer1.C
+        fmt.Println("Timer 1 fired")
+        // prints : Timer 1 fired
+    ```
+* If you just wanted to wait, `you could have used time.Sleep`.
+* One reason a `timer may be useful is that you can cancel the timer before it fires`.
+* Here’s an example of that.
+    ```go
+        timer2 := time.NewTimer(time.Second)
+        go func() {
+            <-timer2.C
+            fmt.Println("Timer 2 fired")
+        }()
+        stop2 := timer2.Stop()
+        if stop2 {
+            fmt.Println("Timer 2 stopped")
+        }
+        // prints : Timer 2 stopped
+    ```
+* Give the timer2 enough time to fire, if it ever was going to, to show it is in fact stopped.
+    ```go
+        time.Sleep(2 * time.Second)
+    ```
+* The first timer will fire ~2s after we start the program, but the second should be stopped before it has a chance to fire.
+
+### Tickers
+* `Timers` are for when you want to do something `once in the future` -
+* `Tickers` are for when you want to do `something repeatedly at regular intervals`.
+* Here’s an example of a ticker that ticks periodically until we stop it.
+
+* Tickers use a similar mechanism to timers: a channel that is sent values.
+* Here we’ll use the select builtin on the channel to await the values as they arrive every 500ms.
+    ```go
+        ticker := time.NewTicker(500 * time.Millisecond)
+        done := make(chan bool)
+        go func() {
+            for {
+                select {
+                case <-done:
+                    return
+                case t := <-ticker.C:
+                    fmt.Println("Tick at", t)
+                }
+            }
+        }()
+        // prints : Tick at 2021-06-13 10:39:19.984730076 +0800 +08 m=+0.500913251
+        // prints : Tick at 2021-06-13 10:39:20.484335584 +0800 +08 m=+1.000518768
+        // prints : Tick at 2021-06-13 10:39:20.984986453 +0800 +08 m=+1.501169622
+    ```
+* Tickers can be stopped like timers. Once a ticker is stopped it won’t receive any more values on its channel. We’ll stop ours after 1600ms.
+    ```go
+        time.Sleep(1600 * time.Millisecond)
+        ticker.Stop()
+        done <- true
+        fmt.Println("Ticker stopped")
+        // prints : Ticker stopped
+    ```
+* When we run this program the ticker should tick 3 times before we stop it.
+
