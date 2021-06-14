@@ -1880,3 +1880,370 @@
     ```
 * When we run this program the ticker should tick 3 times before we stop it.
 
+### Worker Pools
+* we’ll look at how to implement a worker pool using goroutines and channels.
+* Here’s the worker, of which we’ll run several concurrent instances.
+* These workers will receive work on the jobs channel and send the corresponding results on results channel.
+* We’ll sleep a second per job to simulate an expensive task.
+
+    ```go
+        func worker(id int, jobs <-chan int, results chan<- int) {
+            for j := range jobs {
+                fmt.Println("worker", id, "started  job", j)
+                time.Sleep(time.Second)
+                fmt.Println("worker", id, "finished job", j)
+                results <- j * 2
+            }
+        }
+    ```
+* In order to use our pool of workers we need to send them work and collect their results.
+* We make 2 channels for this.
+    ```go
+        jobs := make(chan int, numJobs)
+        results := make(chan int, numJobs)
+    ```
+* This starts up 3 workers, initially blocked because there are no jobs yet.
+    ```go
+        for w := 1; w <= 3; w++ {
+            go worker(w, jobs, results)
+        }
+    ```
+* Here we send 5 jobs and then close that channel to indicate that’s all the work we have.
+    ```go
+        const numJobs = 5
+        for j := 1; j <= numJobs; j++ {
+            jobs <- j
+        }
+        close(jobs)
+    ```
+* Finally we collect all the results of the work.
+* This also ensures that the worker goroutines have finished.
+* `An alternative way to wait for multiple goroutines is to use a WaitGroup`.
+    ```go
+        for a := 1; a <= numJobs; a++ {
+            <-results
+        }
+    ```
+* Our running program shows the 5 jobs being executed by various workers. The program only takes about 2 seconds despite doing about 5 seconds of total work because there are 3 workers operating concurrently.
+
+### WaitGroups
+* To `wait for multiple goroutines to finish, we can use a wait group`.
+* This is the function we’ll run in every goroutine.
+* Note that `a WaitGroup must be passed to functions by pointer`.
+* On return, notify the WaitGroup that we’re done.
+    ```go
+        func worker(id int, wg *sync.WaitGroup) {
+            defer wg.Done()
+            fmt.Printf("Worker %d starting\n", id)
+            // Sleep to simulate an expensive task.
+            time.Sleep(time.Second)
+            fmt.Printf("Worker %d done\n", id)
+        }
+    ```
+* This WaitGroup is used to wait for all the goroutines launched here to finish.
+* Launch several goroutines and increment the WaitGroup counter for each.
+    ```go
+        var wg sync.WaitGroup
+        for i := 1; i <= 5; i++ {
+            wg.Add(1)
+            go worker(i, &wg)
+        }
+    ```
+* `Block until the WaitGroup counter goes back to 0`; all the workers notified they’re done.
+    ```go
+        wg.Wait()
+    ```
+
+* The order of workers starting up and finishing is likely to be different for each invocation.
+
+### Rate Limiting
+* `Rate limiting` is an important mechanism for `controlling resource utilization and maintaining quality of service`.
+* `Go elegantly supports rate limiting with goroutines, channels, and tickers`.
+
+* First we’ll look at basic rate limiting. Suppose we want to limit our handling of incoming requests.
+* We’ll serve these requests off a channel of the same name.
+    ```go
+        requests := make(chan int, 5)
+        for i := 1; i <= 5; i++ {
+            requests <- i
+        }
+        close(requests)
+    ```
+* This limiter channel will receive a value every 200 milliseconds.
+* This is the regulator in our rate limiting scheme.
+    ```go
+        limiter := time.Tick(200 * time.Millisecond)
+    ```
+* By blocking on a receive from the limiter channel before serving each request, we limit ourselves to 1 request every 200 milliseconds.
+    ```go
+        for req := range requests {
+            <-limiter
+            fmt.Println("request", req, time.Now())
+        }
+    ```
+* We may want to allow short bursts of requests in our rate limiting scheme while preserving the overall rate limit.
+* We can accomplish this by buffering our limiter channel. This burstyLimiter channel will allow bursts of up to 3 events.
+    ```go
+        burstyLimiter := make(chan time.Time, 3)
+    ```
+* Fill up the channel to represent allowed bursting.
+    ```go
+        for i := 0; i < 3; i++ {
+            burstyLimiter <- time.Now()
+        }
+    ```
+* Every 200 milliseconds we’ll try to add a new value to burstyLimiter, up to its limit of 3.
+    ```go
+        go func() {
+            for t := range time.Tick(200 * time.Millisecond) {
+                burstyLimiter <- t
+            }
+        }()
+    ```
+* Now simulate 5 more incoming requests. The first 3 of these will benefit from the burst capability of burstyLimiter.
+    ```go
+        burstyRequests := make(chan int, 5)
+        for i := 1; i <= 5; i++ {
+            burstyRequests <- i
+        }
+        close(burstyRequests)
+        for req := range burstyRequests {
+            <-burstyLimiter
+            fmt.Println("request", req, time.Now())
+        }
+    ```
+}
+* Running our program we see the first batch of requests handled once every ~200 milliseconds as desired.
+* For the second batch of requests we serve the first 3 immediately because of the burstable rate limiting, then serve the remaining 2 with ~200ms delays each.
+
+### Atomic Counters
+* The primary mechanism for managing state in Go is communication over channels.
+* We saw this for example with worker pools. There are a few other options for managing state though.
+* Here we’ll look at using the `sync/atomic` package for atomic counters accessed by multiple goroutines.
+
+* We’ll use an unsigned integer to represent our (always-positive) counter.
+    ```go
+        var ops uint64
+    ```
+* A WaitGroup will help us wait for all goroutines to finish their work.
+    ```go
+        var wg sync.WaitGroup
+    ```
+* We’ll start 50 goroutines that each increment the counter exactly 1000 times.
+* To atomically increment the counter we use `AddUint64`, giving it the `memory address of our ops counter with the & syntax`.
+    ```go
+        for i := 0; i < 50; i++ {
+            wg.Add(1)
+            go func() {
+                for c := 0; c < 1000; c++ {
+                    atomic.AddUint64(&ops, 1)
+                }
+                wg.Done()
+            }()
+        }
+    ```
+* Wait until all the goroutines are done.
+    ```go
+        wg.Wait()
+    ```
+* It’s safe to access ops now because we know no other goroutine is writing to it.
+* Reading atomics safely while they are being updated is also possible, using functions like `atomic.LoadUint64`.
+    ```go
+        fmt.Println("ops:", ops)
+        fmt.Println("ops:", atomic.LoadUnit64(&ops))
+    ```
+* We expect to get exactly 50,000 operations. Had we used the non-atomic ops++ to increment the counter, we’d likely get a different number, changing between runs, because the goroutines would interfere with each other. Moreover, `we’d get data race failures when running with the -race flag`.
+
+### Mutexes
+
+* In the previous example we saw how to manage simple counter state using atomic operations.
+* For more complex state we can use a mutex to safely access data across multiple goroutines.
+
+* For our example the state will be a map.
+    ```go
+        var state = make(map[int]int)
+    ```
+* This mutex will synchronize access to state.
+    ```go
+        var mutex = &sync.Mutex{}
+    ```
+* We’ll keep track of how many read and write operations we do.
+    ```go
+        var readOps uint64
+        var writeOps uint64
+    ```
+* Here we start 100 goroutines to execute repeated reads against the state, once per millisecond in each goroutine.
+* For each read we pick a key to access, 
+  * `Lock()` the mutex to ensure exclusive access to the state,
+  * `read` the value at the chosen key,
+  * `Unlock()` the mutex, and increment the readOps count.
+    ```go
+        for r := 0; r < 100; r++ {
+            go func() {
+                total := 0
+                for {
+                    key := rand.Intn(5)
+                    mutex.Lock()
+                    total += state[key]
+                    mutex.Unlock()
+                    atomic.AddUint64(&readOps, 1)
+                    time.Sleep(time.Millisecond)
+                }
+            }()
+        }
+    ```
+* We’ll also start 10 goroutines to simulate writes, using the same pattern we did for reads.
+    ```go
+        for w := 0; w < 10; w++ {
+            go func() {
+                for {
+                    key := rand.Intn(5)
+                    val := rand.Intn(100)
+                    mutex.Lock()
+                    state[key] = val
+                    mutex.Unlock()
+                    atomic.AddUint64(&writeOps, 1)
+                    time.Sleep(time.Millisecond)
+                }
+            }()
+        }
+    ```
+* Let the 10 goroutines work on the state and mutex for a second.
+    ```go
+        time.Sleep(time.Second)
+    ```
+* Take and report final operation counts.
+    ```go
+        readOpsFinal := atomic.LoadUint64(&readOps)
+        fmt.Println("readOps:", readOpsFinal)
+        writeOpsFinal := atomic.LoadUint64(&writeOps)
+        fmt.Println("writeOps:", writeOpsFinal)
+    ```
+* With a final lock of state, show how it ended up.
+    ```go
+        mutex.Lock()
+        fmt.Println("state:", state)
+        mutex.Unlock()
+    ```
+* Running the program shows that we executed about 90,000 total operations against our mutex-synchronized state.
+
+    ```shell
+        raja@raja-Latitude-3460:~/Documents/coding/golang/go-by-examples$ go run mutexs.go 
+        readOps: 75400
+        writeOps: 7527
+        state: map[0:29 1:48 2:8 3:61 4:33]
+        raja@raja-Latitude-3460:~/Documents/coding/golang/go-by-examples$ go run mutexs.go 
+        readOps: 75823
+        writeOps: 7547
+        state: map[0:81 1:68 2:39 3:42 4:78]
+        raja@raja-Latitude-3460:~/Documents/coding/golang/go-by-examples$ go run mutexs.go 
+        readOps: 76288
+        writeOps: 7639
+        state: map[0:91 1:31 2:77 3:91 4:92]
+    ```
+
+### Stateful Goroutines
+
+* In the previous example we used explicit locking with mutexes to synchronize access to shared state across multiple goroutines.
+* Another option is to use the built-in synchronization features of goroutines and channels to achieve the same result.
+* This channel-based approach aligns with Go’s ideas of sharing memory by communicating and having each piece of data owned by exactly 1 goroutine.
+
+* In this example our state will be owned by a single goroutine.
+* This will guarantee that the data is never corrupted with concurrent access.
+* In order to read or write that state, other goroutines will send messages to the owning goroutine and receive corresponding replies.
+* These readOp and writeOp structs encapsulate those requests and a way for the owning goroutine to respond.
+    ```go
+        type readOp struct {
+            key  int
+            resp chan int
+        }
+        type writeOp struct {
+            key  int
+            val  int
+            resp chan bool
+        }
+    ```
+* As before we’ll count how many operations we perform.
+    ```go
+        var readOps uint64
+        var writeOps uint64
+    ```
+* The reads and writes channels will be used by other goroutines to issue read and write requests, respectively.
+    ```go
+        reads := make(chan readOp)
+        writes := make(chan writeOp)
+    ```
+* Here is the goroutine that owns the state, which is a map as in the previous example but now private to the stateful goroutine.
+* This goroutine repeatedly selects on the reads and writes channels, responding to requests as they arrive.
+* A response is executed by first performing the requested operation and then sending a value on the response channel resp to indicate success (and the desired value in the case of reads).
+    ```go
+        go func() {
+            var state = make(map[int]int)
+            for {
+                select {
+                case read := <-reads:
+                    read.resp <- state[read.key]
+                case write := <-writes:
+                    state[write.key] = write.val
+                    write.resp <- true
+                }
+            }
+        }()
+    ```
+* This starts 100 goroutines to issue reads to the state-owning goroutine via the reads channel.
+* Each read requires constructing a readOp, sending it over the reads channel, and the receiving the result over the provided resp channel.
+    ```go
+        for r := 0; r < 100; r++ {
+            go func() {
+                for {
+                    read := readOp{
+                        key:  rand.Intn(5),
+                        resp: make(chan int)}
+                    reads <- read
+                    <-read.resp
+                    atomic.AddUint64(&readOps, 1)
+                    time.Sleep(time.Millisecond)
+                }
+            }()
+        }
+    ```
+* We start 10 writes as well, using a similar approach.
+    ```go
+        for w := 0; w < 10; w++ {
+            go func() {
+                for {
+                    write := writeOp{
+                        key:  rand.Intn(5),
+                        val:  rand.Intn(100),
+                        resp: make(chan bool)}
+                    writes <- write
+                    <-write.resp
+                    atomic.AddUint64(&writeOps, 1)
+                    time.Sleep(time.Millisecond)
+                }
+            }()
+        }
+    ```
+* Let the goroutines work for a second.
+* Finally, capture and report the op counts
+    ```go
+        time.Sleep(time.Second)
+        readOpsFinal := atomic.LoadUint64(&readOps)
+        fmt.Println("readOps:", readOpsFinal)
+        writeOpsFinal := atomic.LoadUint64(&writeOps)
+        fmt.Println("writeOps:", writeOpsFinal)
+    ```
+* For this particular case the goroutine-based approach was a bit more involved than the mutex-based one.
+* It might be useful in certain cases though, for example where you have other channels involved or when managing multiple such mutexes would be error-prone. 
+* You should use whichever approach feels most natural, especially with respect to understanding the correctness of your program.
+    ```shell
+        raja@raja-Latitude-3460:~/Documents/coding/golang/go-by-examples$ go run stateful_goroutines.go 
+        readOps: 69319
+        writeOps: 7025
+        raja@raja-Latitude-3460:~/Documents/coding/golang/go-by-examples$ go run stateful_goroutines.go 
+        readOps: 74151
+        writeOps: 7415
+        raja@raja-Latitude-3460:~/Documents/coding/golang/go-by-examples$ go run stateful_goroutines.go 
+        readOps: 74034
+        writeOps: 7438
+    ```
