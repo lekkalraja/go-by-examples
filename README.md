@@ -1510,7 +1510,7 @@
     ```
 * When we run this program, we see the output of the blocking call first, then the interleaved output of the two goroutines.
 * This interleaving reflects the goroutines being run concurrently by the Go runtime.
-    ```shell
+    ```s
         raja@raja-Latitude-3460:~/Documents/coding/golang/go-by-examples$ go run goroutines.go 
         direct : 0
         direct : 1
@@ -2127,7 +2127,7 @@
     ```
 * Running the program shows that we executed about 90,000 total operations against our mutex-synchronized state.
 
-    ```shell
+    ```s
         raja@raja-Latitude-3460:~/Documents/coding/golang/go-by-examples$ go run mutexs.go 
         readOps: 75400
         writeOps: 7527
@@ -2236,7 +2236,7 @@
 * For this particular case the goroutine-based approach was a bit more involved than the mutex-based one.
 * It might be useful in certain cases though, for example where you have other channels involved or when managing multiple such mutexes would be error-prone. 
 * You should use whichever approach feels most natural, especially with respect to understanding the correctness of your program.
-    ```shell
+    ```s
         raja@raja-Latitude-3460:~/Documents/coding/golang/go-by-examples$ go run stateful_goroutines.go 
         readOps: 69319
         writeOps: 7025
@@ -2246,4 +2246,253 @@
         raja@raja-Latitude-3460:~/Documents/coding/golang/go-by-examples$ go run stateful_goroutines.go 
         readOps: 74034
         writeOps: 7438
+    ```
+### Command-Line Arguments
+* Command-line arguments are a common way to parameterize execution of programs.
+* For example, `go run hello.go uses run and hello.go arguments to the go program`.
+
+* `os.Args` provides access to raw command-line arguments.
+* Note that the `first value in this slice is the path to the program`,
+* and os.Args[1:] holds the arguments to the program.
+    ```go
+        argsWithProg := os.Args
+        argsWithoutProg := os.Args[1:]
+    ```
+* You can get individual args with normal indexing.
+    ```go
+        arg := os.Args[3]
+        fmt.Println(argsWithProg) // [./command-line-arguments first second third]
+        fmt.Println(argsWithoutProg) // [first second third]
+        fmt.Println(arg) // third
+    ```
+* To experiment with command-line arguments it’s best to build a binary with go build first.
+    ```s
+        raja@raja-Latitude-3460:~/Documents/coding/golang/go-by-examples$ go build command-line-arguments.go 
+        raja@raja-Latitude-3460:~/Documents/coding/golang/go-by-examples$ ./command-line-arguments first second third
+        [./command-line-arguments first second third]
+        [first second third]
+        third
+    ```
+### Command-Line Flags
+* Command-line flags are a common way to specify options for command-line programs.
+* For example, `in wc -l the -l is a command-line flag`.
+
+* Go provides a `flag package` supporting basic command-line flag parsing.
+* We’ll use this package to implement our example command-line program.
+
+* `Basic flag declarations are available for string, integer, and boolean options`.
+* Here we declare a string flag word with a default value "foo" and a short description.
+* This `flag.String function returns a string pointer (not a string value)`
+    ```go
+        wordPtr := flag.String("word", "foo", "a string")
+    ```
+* This declares numb and fork flags, using a similar approach to the word flag.
+    ```go
+        numbPtr := flag.Int("numb", 42, "an int")
+        boolPtr := flag.Bool("fork", false, "a bool")
+    ```
+* It’s also possible to declare an option that uses an existing var declared elsewhere in the program.
+* Note that we need to pass in a pointer to the flag declaration function.
+    ```go
+        var svar string
+        flag.StringVar(&svar, "svar", "bar", "a string var")
+    ```
+* Once all flags are declared, call `flag.Parse()` to execute the command-line parsing.
+    ```go
+        flag.Parse()
+    ```
+* Here we’ll just dump out the parsed options and any trailing positional arguments.
+* Note that we need to dereference the pointers with e.g. *wordPtr to get the actual option values.
+    ```go
+        fmt.Println("word:", *wordPtr)
+        fmt.Println("numb:", *numbPtr)
+        fmt.Println("fork:", *boolPtr)
+        fmt.Println("svar:", svar)
+        fmt.Println("tail:", flag.Args())
+    ```
+* To experiment with the command-line flags program it’s best to first compile it and then run the resulting binary directly.
+
+* Try out the built program by first giving it values for all flags.
+    ```s
+        $ go build command-line-flags.go
+        $ ./command-line-flags -word=opt -numb=7 -fork -svar=flag
+        word: opt
+        numb: 7
+        fork: true
+        svar: flag
+        tail: []
+    ```
+* Note that if you omit flags they automatically take their default values.
+    ```s
+        $ ./command-line-flags -word=opt
+        word: opt
+        numb: 42
+        fork: false
+        svar: bar
+        tail: []
+    ```
+* Trailing positional arguments can be provided after any flags.
+    ```s
+        $ ./command-line-flags -word=opt a1 a2 a3
+        word: opt
+        ...
+        tail: [a1 a2 a3]
+    ```
+* Note that the flag package requires all flags to appear before positional arguments (otherwise the flags will be interpreted as positional arguments).
+    ```s
+        $ ./command-line-flags -word=opt a1 a2 a3 -numb=7
+        word: opt
+        numb: 42
+        fork: false
+        svar: bar
+        tail: [a1 a2 a3 -numb=7]
+    ```
+* Use -h or --help flags to get automatically generated help text for the command-line program.
+    ```s
+        $ ./command-line-flags -h
+        Usage of ./command-line-flags:
+        -fork=false: a bool
+        -numb=42: an int
+        -svar="bar": a string var
+        -word="foo": a string
+    ```
+* If you provide a flag that wasn’t specified to the flag package, the program will print an error message and show the help text again.
+    ```s
+        $ ./command-line-flags -wat
+        flag provided but not defined: -wat
+        Usage of ./command-line-flags:
+    ```
+
+### Command-Line Subcommands
+* Some command-line tools, like the go tool or git have many subcommands, each with its own set of flags.
+* For example, go build and go get are two different subcommands of the go tool.
+* The flag package lets us easily define simple subcommands that have their own flags.
+
+* We `declare a subcommand using the NewFlagSet function`, and proceed to define new flags specific for this subcommand.
+    ```go
+        fooCmd := flag.NewFlagSet("foo", flag.ExitOnError)
+        fooEnable := fooCmd.Bool("enable", false, "enable")
+        fooName := fooCmd.String("name", "", "name")
+    ```
+* For a different subcommand we can define different supported flags.
+    ```go
+        barCmd := flag.NewFlagSet("bar", flag.ExitOnError)
+        barLevel := barCmd.Int("level", 0, "level")
+    ```
+* The subcommand is expected as the first argument to the program.
+    ```go
+        if len(os.Args) < 2 {
+            fmt.Println("expected 'foo' or 'bar' subcommands")
+            os.Exit(1)
+        }
+    ```
+* Check which subcommand is invoked.
+* For every subcommand, we parse its own flags and have access to trailing positional arguments.
+    ```go
+        switch os.Args[1] {
+        case "foo":
+            fooCmd.Parse(os.Args[2:])
+            fmt.Println("subcommand 'foo'")
+            fmt.Println("  enable:", *fooEnable)
+            fmt.Println("  name:", *fooName)
+            fmt.Println("  tail:", fooCmd.Args())
+        case "bar":
+            barCmd.Parse(os.Args[2:])
+            fmt.Println("subcommand 'bar'")
+            fmt.Println("  level:", *barLevel)
+            fmt.Println("  tail:", barCmd.Args())
+        default:
+            fmt.Println("expected 'foo' or 'bar' subcommands")
+            os.Exit(1)
+        }
+    ```
+* First invoke the foo subcommand.
+    ```s
+        $ go build command-line-subcommands.go
+        $ ./command-line-subcommands foo -enable -name=joe a1 a2
+        subcommand 'foo'
+        enable: true
+        name: joe
+        tail: [a1 a2]
+    ```
+* Now try bar.
+    ```s
+        $ ./command-line-subcommands bar -level 8 a1
+        subcommand 'bar'
+        level: 8
+        tail: [a1]
+    ```
+* But bar won’t accept foo’s flags.
+    ```s
+        $ ./command-line-subcommands bar -enable a1
+        flag provided but not defined: -enable
+        Usage of bar:
+        -level int
+                level
+    ```
+
+### Environment Variables
+* Environment variables are a universal mechanism for conveying configuration information to Unix programs.
+* Let’s look at how to set, get, and list environment variables.
+
+* To `set a key/value pair, use os.Setenv`.
+* To `get a value for a key, use os.Getenv`.
+* This will return an empty string if the key isn’t present in the environment.
+    ```go
+        os.Setenv("FOO", "1")
+        fmt.Println("FOO:", os.Getenv("FOO"))
+        fmt.Println("BAR:", os.Getenv("BAR"))
+    ```
+* Use `os.Environ to list all key/value pairs in the environment`.
+* This returns a slice of strings in the form KEY=value.
+* You can strings.SplitN them to get the key and value. Here we print all the keys.
+    ```go
+        fmt.Println()
+        for _, e := range os.Environ() {
+            pair := strings.SplitN(e, "=", 2)
+            fmt.Println(pair[0])
+        }
+    ```
+}
+    ```s
+        $ go run environment-variables.go
+        FOO: 1
+        BAR: 
+
+        SHELL
+        SESSION_MANAGER
+        QT_ACCESSIBILITY
+        COLORTERM
+        XDG_CONFIG_DIRS
+        INTELLIJ_HOME
+        XDG_MENU_PREFIX
+        TERM_PROGRAM_VERSION
+        GNOME_DESKTOP_SESSION_ID
+        DERBY_HOME
+        MANDATORY_PATH
+        JAVA_HOME
+        ....
+    ```
+
+### Sorting
+* Go’s sort package implements sorting for builtins and user-defined types.
+* We’ll look at sorting for builtins first.
+
+* Sort methods are specific to the builtin type; here’s an example for strings.
+* Note that `sorting is in-place, so it changes the given slice and doesn’t return a new one`.
+    ```go
+        strs := []string{"c", "a", "b"}
+        sort.Strings(strs)
+        fmt.Println("Strings:", strs)
+    ```
+* An example of sorting ints.
+    ```go
+        ints := []int{7, 2, 4}
+        sort.Ints(ints)
+        fmt.Println("Ints:   ", ints)
+    ```
+* We can also use sort to check if a slice is already in sorted order.
+    ```go
+        s := sort.IntsAreSorted(ints)
+        fmt.Println("Sorted: ", s)
     ```
