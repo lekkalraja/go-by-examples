@@ -2826,3 +2826,249 @@
         YWJjMTIzIT8kKiYoKSctPUB-
         abc123!?$*&()'-=@~
     ```
+
+### Reading Files
+* Reading and writing files are basic tasks needed for many Go programs.
+* First we’ll look at some examples of reading files.
+* Reading files requires checking most calls for errors.
+* This helper will streamline our error checks below.
+    ```go
+        func check(e error) {
+            if e != nil {
+                panic(e)
+            }
+        }
+    ```
+
+* Perhaps the most basic file reading task is slurping a file’s entire contents into memory.
+    ```go
+        dat, err := ioutil.ReadFile("errors.go")
+        check(err)
+        fmt.Print(string(dat))
+    ```
+* You’ll often want more control over how and what parts of a file are read. For these tasks, start by Opening a file to obtain an `os.File` value.
+    ```go
+        f, err := os.Open("/tmp/dat")
+        check(err)
+    ```
+* Read some bytes from the beginning of the file. Allow up to 5 to be read but also note how many actually were read.
+    ```go
+        b1 := make([]byte, 5)
+        n1, err := f.Read(b1)
+        check(err)
+        fmt.Printf("%d bytes: %s\n", n1, string(b1[:n1]))
+    ```
+* You can also Seek to a known location in the file and Read from there.
+    ```go
+        o2, err := f.Seek(6, 0)
+        check(err)
+        b2 := make([]byte, 2)
+        n2, err := f.Read(b2)
+        check(err)
+        fmt.Printf("%d bytes @ %d: ", n2, o2)
+        fmt.Printf("%v\n", string(b2[:n2]))
+    ```
+* The io package provides some functions that may be helpful for file reading.
+* For example, reads like the ones above can be more robustly implemented with ReadAtLeast.
+    ```go
+        o3, err := f.Seek(6, 0)
+        check(err)
+        b3 := make([]byte, 2)
+        n3, err := io.ReadAtLeast(f, b3, 2)
+        check(err)
+        fmt.Printf("%d bytes @ %d: %s\n", n3, o3, string(b3))
+    ```
+* There is no built-in rewind, but Seek(0, 0) accomplishes this.
+    ```go
+        _, err = f.Seek(0, 0)
+        check(err)
+    ```
+* The bufio package implements a buffered reader that may be useful both for its efficiency with many small reads and because of the additional reading methods it provides.
+    ```go
+        r4 := bufio.NewReader(f)
+        b4, err := r4.Peek(5)
+        check(err)
+        fmt.Printf("5 bytes: %s\n", string(b4))
+    ```
+* Close the file when you’re done (usually this would be scheduled immediately after Opening with defer).
+    ```go
+        f.Close()
+    ```
+
+### Writing Files
+* Writing files in Go follows similar patterns to the ones we saw earlier for reading.
+* To start, here’s how to dump a string (or just bytes) into a file.
+    ```go
+        d1 := []byte("hello\ngo\n")
+        err := ioutil.WriteFile("/tmp/dat1", d1, 0644)
+        check(err)
+    ```
+* For more granular writes, open a file for writing.
+    ```go
+        f, err := os.Create("/tmp/dat2")
+        check(err)
+    ```
+* It’s idiomatic to defer a Close immediately after opening a file.
+    ```go
+        defer f.Close()
+    ```
+* You can Write byte slices as you’d expect.
+    ```go
+        d2 := []byte{115, 111, 109, 101, 10}
+        n2, err := f.Write(d2)
+        check(err)
+        fmt.Printf("wrote %d bytes\n", n2)
+    ```
+* A WriteString is also available.
+    ```go
+        n3, err := f.WriteString("writes\n")
+        check(err)
+        fmt.Printf("wrote %d bytes\n", n3)
+    ```
+* Issue a Sync to flush writes to stable storage.
+    ```go
+        f.Sync()
+    ```
+* `bufio` provides buffered writers in addition to the buffered readers we saw earlier.
+    ```go
+        w := bufio.NewWriter(f)
+        n4, err := w.WriteString("buffered\n")
+        check(err)
+        fmt.Printf("wrote %d bytes\n", n4)
+    ```
+* Use Flush to ensure all buffered operations have been applied to the underlying writer.
+    ```go
+        w.Flush()
+    ```
+
+### Line Filters
+* A line filter is a common type of program that reads input on stdin, processes it, and then prints some derived result to stdout. grep and sed are common line filters.
+
+* Here’s an example line filter in Go that writes a capitalized version of all input text. You can use this pattern to write your own Go line filters.
+
+* Wrapping the unbuffered os.Stdin with a buffered scanner gives us a convenient Scan method that advances the scanner to the next token; which is the next line in the default scanner.
+    ```go
+        scanner := bufio.NewScanner(os.Stdin)
+    ```
+* Text returns the current token, here the next line, from the input.
+    ```go
+        for scanner.Scan() {
+            ucl := strings.ToUpper(scanner.Text())
+            fmt.Println(ucl)
+        }
+    ```
+* Check for errors during Scan. End of file is expected and not reported by Scan as an error.
+    ```go
+        if err := scanner.Err(); err != nil {
+            fmt.Fprintln(os.Stderr, "error:", err)
+            os.Exit(1)
+        }
+    ```
+
+### Directories
+* Go has several useful functions for working with directories in the file system.
+* Create a new sub-directory in the current working directory.
+    ```go
+        err := os.Mkdir("subdir", 0755)
+        check(err)
+    ```
+* When creating temporary directories, it’s good practice to defer their removal. `os.RemoveAll` will delete a whole directory tree (`similarly to rm -rf`).
+    ```go
+        defer os.RemoveAll("subdir")
+    ```
+* Helper function to create a new empty file.
+    ```go
+        createEmptyFile := func(name string) {
+            d := []byte("")
+            check(ioutil.WriteFile(name, d, 0644))
+        }
+        createEmptyFile("subdir/file1")
+    ```
+* We can create a hierarchy of directories, `including parents with MkdirAll. This is similar to the command-line mkdir -p`.
+    ```go
+        err = os.MkdirAll("subdir/parent/child", 0755)
+        check(err)
+        createEmptyFile("subdir/parent/file2")
+        createEmptyFile("subdir/parent/file3")
+        createEmptyFile("subdir/parent/child/file4")
+    ```
+* ReadDir lists directory contents, returning a slice of os.FileInfo objects.
+    ```go
+        c, err := ioutil.ReadDir("subdir/parent")
+        check(err)
+        fmt.Println("Listing subdir/parent")
+        for _, entry := range c {
+            fmt.Println(" ", entry.Name(), entry.IsDir())
+        }
+    ```
+* `Chdir` lets us change the current working directory, similarly to cd.
+    ```go
+        err = os.Chdir("subdir/parent/child")
+        check(err)
+    ```
+* Now we’ll see the contents of subdir/parent/child when listing the current directory.
+    ```go
+        c, err = ioutil.ReadDir(".")
+        check(err)
+        fmt.Println("Listing subdir/parent/child")
+        for _, entry := range c {
+            fmt.Println(" ", entry.Name(), entry.IsDir())
+        }
+    ```
+* cd back to where we started.
+    ```go
+        err = os.Chdir("../../..")
+        check(err)
+    ```
+* We can also visit a directory recursively, including all its sub-directories.
+* `Walk` accepts a callback function to handle every file or directory visited.
+    ```go
+        fmt.Println("Visiting subdir")
+        err = filepath.Walk("subdir", visit)
+    ```
+* visit is called for every file or directory found recursively by `filepath.Walk`.
+    ```go
+        func visit(p string, info os.FileInfo, err error) error {
+            if err != nil {
+                return err
+            }
+            fmt.Println(" ", p, info.IsDir())
+            return nil
+        }
+    ```
+
+### Temporary Files and Directories
+* Throughout program execution, we often want to create data that isn’t needed after the program exits. Temporary files and directories are useful for this purpose since they don’t pollute the file system over time.
+
+* The easiest way to create a temporary file is by calling `ioutil.TempFile`. It creates a file and opens it for reading and writing. We provide "" as the first argument, so ioutil.TempFile will create the file in the default location for our OS.
+    ```go
+        f, err := ioutil.TempFile("", "sample")
+        check(err)
+    ```
+* Display the name of the temporary file. On Unix-based OSes the directory will likely be /tmp. The file name starts with the prefix given as the second argument to ioutil.TempFile and the rest is chosen automatically to ensure that concurrent calls will always create different file names.
+    ```go
+        fmt.Println("Temp file name:", f.Name())
+    ```
+* Clean up the file after we’re done. The OS is likely to clean up temporary files by itself after some time, but it’s good practice to do this explicitly.
+    ```go
+        defer os.Remove(f.Name())
+    ```
+* We can write some data to the file.
+    ```go
+        _, err = f.Write([]byte{1, 2, 3, 4})
+        check(err)
+    ```
+* If we intend to write many temporary files, we may prefer to create a temporary directory.
+* ioutil.TempDir’s arguments are the same as TempFile’s, but it returns a directory name rather than an open file.
+    ```go
+        dname, err := ioutil.TempDir("", "sampledir")
+        check(err)
+        fmt.Println("Temp dir name:", dname)
+        defer os.RemoveAll(dname)
+    ```
+* Now we can synthesize temporary file names by prefixing them with our temporary directory.
+    ```go
+        fname := filepath.Join(dname, "file1")
+        err = ioutil.WriteFile(fname, []byte{1, 2}, 0666)
+        check(err)
+    ```
