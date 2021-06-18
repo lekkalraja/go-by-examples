@@ -3072,3 +3072,177 @@
         err = ioutil.WriteFile(fname, []byte{1, 2}, 0666)
         check(err)
     ```
+
+### Testing
+* Unit testing is an important part of writing principled Go programs.
+* The `testing package` provides the tools we need to write unit tests and the go test command runs tests.
+
+* For the sake of demonstration, this code is in package main, but it could be any package.
+* Testing code typically lives in the same package as the code it tests.
+
+* We’ll be testing this simple implementation of an integer minimum. Typically, the code we’re testing would be in a source file named something like intutils.go, and the test file for it would then be named intutils_test.go.
+    ```go
+        func IntMin(a, b int) int {
+            if a < b {
+                return a
+            }
+            return b
+        }
+    ```
+* A test is created by writing a function with a name beginning with Test.
+* `t.Error*` will report test failures but continue executing the test.
+* `t.Fatal*` will report test failures and stop the test immediately.
+
+    ```go
+        func TestIntMinBasic(t *testing.T) {
+            ans := IntMin(2, -2)
+            if ans != -2 {
+                t.Errorf("IntMin(2, -2) = %d; want -2", ans)
+            }
+        }
+    ```
+* Writing tests can be repetitive, so it’s idiomatic to use a table-driven style, where test inputs and expected outputs are listed in a table and a single loop walks over them and performs the test logic.
+* `t.Run` enables running “subtests”, one for each table entry. These are shown separately when executing `go test -v`.
+    ```go
+        func TestIntMinTableDriven(t *testing.T) {
+            var tests = []struct {
+                a, b int
+                want int
+            }{
+                {0, 1, 0},
+                {1, 0, 0},
+                {2, -2, -2},
+                {0, -1, -1},
+                {-1, 0, -1},
+            }
+
+            for _, tt := range tests {
+                testname := fmt.Sprintf("%d,%d", tt.a, tt.b)
+                t.Run(testname, func(t *testing.T) {
+                    ans := IntMin(tt.a, tt.b)
+                    if ans != tt.want {
+                        t.Errorf("got %d, want %d", ans, tt.want)
+                    }
+                })
+            }
+        }
+    ```
+### If/Else
+* Branching with if and else in Go is straight-forward.
+    ```go
+        if 7%2 == 0 {
+            fmt.Println("7 is even")
+        } else {
+            fmt.Println("7 is odd")
+        }
+    ```
+* You can have an if statement without an else.
+    ```go
+        if 8%4 == 0 {
+            fmt.Println("8 is divisible by 4")
+        }
+    ```
+* A statement can precede conditionals; any variables declared in this statement are available in all branches.
+    ```go
+        if num := 9; num < 0 {
+            fmt.Println(num, "is negative")
+        } else if num < 10 {
+            fmt.Println(num, "has 1 digit")
+        } else {
+            fmt.Println(num, "has multiple digits")
+        }
+    ```
+* Note that you don’t need parentheses around conditions in Go, but that the braces are required.
+* There is `no ternary if in Go`, so you’ll need to use a full if statement even for basic conditions.
+
+### For
+* for is Go’s only looping construct. Here are some basic types of for loops.
+* The most basic type, with a single condition.
+    ```go
+        i := 1
+        for i <= 3 {
+            fmt.Println(i)
+            i = i + 1
+        }
+    ```
+* A classic initial/condition/after for loop.
+    ```go
+        for j := 7; j <= 9; j++ {
+            fmt.Println(j)
+        }
+    ```
+* for without a condition will loop repeatedly until you break out of the loop or return from the enclosing function.
+    ```go
+        for {
+            fmt.Println("loop")
+            break
+        }
+    ```
+* You can also continue to the next iteration of the loop.
+    ```go
+        for n := 0; n <= 5; n++ {
+            if n%2 == 0 {
+                continue
+            }
+            fmt.Println(n)
+        }
+    ```
+### Variables
+* In Go, variables are explicitly declared and used by the compiler to e.g. check type-correctness of function calls.
+
+* var declares 1 or more variables.
+    ```go
+        var a = "initial"
+        fmt.Println(a)
+    ```
+* You can declare multiple variables at once.
+    ```go
+        var b, c int = 1, 2
+        fmt.Println(b, c)
+    ```
+* Go will infer the type of initialized variables.
+    ```go
+        var d = true
+        fmt.Println(d)
+    ```
+* Variables declared without a corresponding initialization are zero-valued.
+* For example, the zero value for an int is 0.
+    ```go
+        var e int
+        fmt.Println(e)
+    ```
+* The `:=` syntax is shorthand for declaring and initializing a variable, e.g. for `var f string = "apple"` in this case.
+    ```go
+        f := "apple"
+        fmt.Println(f)
+    ```
+
+### Values
+* Go has various value types including strings, integers, floats, booleans, etc. Here are a few basic examples.
+
+* Strings, which can be added together with +.
+    ```go
+        fmt.Println("go" + "lang")
+    ```
+* Integers and floats.
+    ```go
+        fmt.Println("1+1 =", 1+1)
+        fmt.Println("7.0/3.0 =", 7.0/3.0)
+    ```
+* Booleans, with boolean operators as you’d expect.
+    ```go
+        fmt.Println(true && false)
+        fmt.Println(true || false)
+        fmt.Println(!true)
+    ```
+
+### GoodBye World
+* Our Last program will print the classic "GoodBye world” message. Here’s the full source code.
+
+    ```go
+        package main
+        import "fmt"
+        func main() {
+            fmt.Println("hello world")
+        }
+    ```
